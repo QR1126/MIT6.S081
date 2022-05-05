@@ -34,7 +34,8 @@ ls(char *path)
     fprintf(2, "ls: cannot open %s\n", path);
     return;
   }
-
+  // int fstat(int fd, struct stat *st) system call
+  // which save inode (file) information into st
   if(fstat(fd, &st) < 0){
     fprintf(2, "ls: cannot stat %s\n", path);
     close(fd);
