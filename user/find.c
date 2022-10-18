@@ -9,12 +9,14 @@ void find(char *path, char *file_name) {
     struct dirent de;
     struct stat st;
 
-    if ((fd = open(path, 0)) < 0) {
-        fprintf(2, "find: cannot open %s", path);
+    if((fd = open(path, 0)) < 0){
+        fprintf(2, "find: cannot open %s\n", path);
         return;
     }
-    if (fstat(fd, &st) < 0) {
-        fprintf(2, "find: cannot stat %s", path);
+    // int fstat(int fd, struct stat *st) system call
+    // which save inode (file) information into st
+    if(fstat(fd, &st) < 0){
+        fprintf(2, "find: cannot stat %s\n", path);
         close(fd);
         return;
     }
@@ -49,11 +51,13 @@ void find(char *path, char *file_name) {
     close(fd);
 }
 
-int main(int argv, char *argc[]) {
-    if (argv != 3) {
+int 
+main(int argc, char *argv[])
+{
+    if (argc != 3) {
         fprintf(2, "find: you need pass 2 arguments\n");
         exit(1);
     }
-    find(argc[1], argc[2]);
+    find(argv[1], argv[2]);
     exit(0);
 }

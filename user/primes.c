@@ -1,47 +1,55 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "user/user.h"
-#define PRIME_NUM 35
-#define READEND 0
-#define WRITEEND 1
 
-void child(int *pl) {
-    int pr[2];
+#define MAXNUMBER 35
+#define WRITE 1
+#define READ 0
+
+void child(int *pleft) {
     int n;
-    close(pl[WRITEEND]);
-    int read_fisrt = read(pl[READEND], &n, sizeof(int));
-    if (read_fisrt == 0) {
+    int pright[2];
+
+    close(pleft[WRITE]);
+
+    int res = read(pleft[READ], &n, sizeof(int));
+    if (res == 0) {
         exit(0);
-    } 
-    pipe(pr);
+    }
+
+    pipe(pright);
+
     if (fork() == 0) {
-        child(pr);
+        child(pright);
     } else {
-        close(pr[READEND]);
+        close(pright[READ]);
         printf("prime %d\n", n);
         int prime = n;
-        while (read(pl[READEND], &n, sizeof(int)) != 0) {
-            if (n % prime != 0) write(pr[WRITEEND], &n, sizeof(int));
+        while (read(pleft[READ], &n, sizeof(int)) != 0) {
+            if (n % prime != 0) {
+                write(pright[WRITE], &n, sizeof(int));
+            }
         }
-        close(pr[WRITEEND]);
-        wait((int*) 0);
+        close(pright[WRITE]);
+        wait((int *) 0);
         exit(0);
     }
 }
 
-int main(int argc, char *argv[]) {
+int 
+main(int argc, char const *argv[])
+{
     int p[2];
     pipe(p);
-
     if (fork() == 0) {
         child(p);
     } else {
-        close(p[READEND]);
-        for (int i = 2; i <= PRIME_NUM; i++) {
-            write(p[WRITEEND], &i, sizeof(int));
+        close(p[READ]);
+        for (int i = 2; i <= MAXNUMBER; i++) {
+            write(p[WRITE], &i, sizeof(int));
         }
-        close(p[WRITEEND]);
-        wait((int*) 0);
+        close(p[WRITE]);
+        wait((int *) 0);
     }
     exit(0);
 }
