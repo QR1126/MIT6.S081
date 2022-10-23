@@ -440,3 +440,43 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// print page table pte information
+// [depth] [index] ": pte" [pte bits] "pa" [physical address]
+void vmprint(pagetable_t pagetable) {
+  printf("page table %p\n", pagetable);
+  printwalk(pagetable, 0);
+}
+
+void printwalk(pagetable_t pagetable, int depth) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    // this pte is valid and points to next level page table
+    if ((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0) { 
+      // print [depth]
+      for (int j = depth; j >= 0; j--) {
+        if (j == 0)
+          printf("..");
+        else
+          printf(".. ");
+      }
+      // print index and pte bits
+      printf("%d: pte %p ", i, pte);
+      uint64 child = PTE2PA(pte);
+      // print pa
+      printf("pa %p\n", child);
+      printwalk((pagetable_t) child, depth + 1);
+    } else if (pte & PTE_V){
+      for (int j = depth; j >= 0; j--) {
+        if (j == 0)
+          printf("..");
+        else
+          printf(".. ");
+      }
+      printf("%d: pte %p ", i, pte);
+      uint64 child = PTE2PA(pte);
+      // print pa
+      printf("pa %p\n", child);
+    }
+  }
+}
