@@ -108,6 +108,7 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+void            ukvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -180,6 +181,10 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t);
 void            printwalk(pagetable_t pagetable, int depth);
+pagetable_t     proc_kpagetable(void);
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
+void            proc_freekpagetable(pagetable_t kpgtbl);
+void            u2kvmcopy(pagetable_t pgtbl, pagetable_t kpgtbl, uint64 oldsz, uint64 newsz);
 
 // plic.c
 void            plicinit(void);
@@ -191,6 +196,10 @@ void            plic_complete(int);
 void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void);
+
+// vmcopyin.c
+int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

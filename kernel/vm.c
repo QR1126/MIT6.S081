@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -45,6 +47,43 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
+pagetable_t
+proc_kpagetable()
+{
+  pagetable_t kpgtbl;
+  kpgtbl = uvmcreate();
+  if (kpgtbl == 0) {
+    return 0;
+  }
+
+  ukvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  ukvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  ukvmmap(kpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  ukvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  ukvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  ukvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  ukvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  return kpgtbl;
+}
+
+void
+proc_freekpagetable(pagetable_t kpgtbl)
+{
+  for(int i = 0; i < 512; i++){
+    pte_t pte = kpgtbl[i];
+    if((pte & PTE_V)){
+      kpgtbl[i] = 0;
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        // this PTE points to a lower-level page table.
+        uint64 child = PTE2PA(pte);
+        proc_freekpagetable((pagetable_t) child);
+      }
+    } 
+  }
+  kfree((void*) kpgtbl);
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -132,7 +171,7 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->kpagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -335,6 +374,28 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
+void
+u2kvmcopy(pagetable_t pgtbl, pagetable_t kpgtbl, uint64 oldsz, uint64 newsz)
+{
+  uint64 i, pa;
+  uint flags;
+  pte_t *pte_from, *pte_to;
+  if (oldsz < newsz) {
+    oldsz = PGROUNDDOWN(oldsz);
+    for (i = oldsz; i < newsz; i += PGSIZE) {
+      if ((pte_from = walk(pgtbl, i, 0)) == 0) {
+        panic("u2kvmcopy: pte should exist");
+      }
+      if ((pte_to = walk(kpgtbl, i, 1)) == 0) {
+        panic("u2kvmcopy: walk fails");
+      }
+      pa = PTE2PA(*pte_from);
+      flags = PTE_FLAGS(*pte_from) & (~PTE_U);
+      *pte_to = PA2PTE(pa) | flags;
+    }
+  }
+}
+
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
 void
@@ -379,23 +440,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -405,40 +450,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
-
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 // print page table pte information

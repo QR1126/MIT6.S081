@@ -85,6 +85,16 @@ allocpid() {
   return pid;
 }
 
+void 
+ukvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if (mappages(kpgtbl, va, sz, pa, perm) != 0) {
+    panic("ukvmmap");
+  }
+}
+
+extern pagetable_t kernel_pagetable;
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -121,6 +131,20 @@ found:
     return 0;
   }
 
+  p->kpagetable = proc_kpagetable();
+  if (p->kpagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  ukvmmap(p->kpagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,6 +165,18 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+
+  pte_t *pte = walk(p->kpagetable, p->kstack, 0);
+  if (pte == 0) {
+    panic("freeproc: free kstack");
+  }
+  kfree((void *) PTE2PA(*pte));
+  p->kstack = 0;
+
+  if (p->kpagetable) {
+    proc_freekpagetable(p->kpagetable);
+  }
+  p->kpagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -230,6 +266,8 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  u2kvmcopy(p->pagetable, p->kpagetable, 0, p->sz);
+
   release(&p->lock);
 }
 
@@ -243,12 +281,16 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    if (PGROUNDUP(n + sz) >= PLIC)
+      return -1;
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    // u2kvmcopy(p->pagetable, p->kpagetable, sz - n, sz);
   }
+  u2kvmcopy(p->pagetable, p->kpagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -288,6 +330,8 @@ fork(void)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
+
+  u2kvmcopy(np->pagetable, np->kpagetable, 0, np->sz);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
@@ -473,11 +517,17 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+        kvminithart();
 
         found = 1;
       }

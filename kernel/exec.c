@@ -75,6 +75,8 @@ exec(char *path, char **argv)
   sp = sz;
   stackbase = sp - PGSIZE;
 
+  
+
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -119,7 +121,7 @@ exec(char *path, char **argv)
   if (p->pid == 1) {
     vmprint(p->pagetable);
   }
-  
+  u2kvmcopy(pagetable, p->kpagetable, 0, sz);
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
