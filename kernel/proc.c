@@ -21,6 +21,8 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+char trapframe_alarm[288];
+
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -120,6 +122,9 @@ found:
     release(&p->lock);
     return 0;
   }
+  p->alarmInterval = 0;
+  p->handler = 0;
+  p->totalticks = 0;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
