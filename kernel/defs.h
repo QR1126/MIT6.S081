@@ -63,7 +63,8 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
-
+int             P(int idx);
+int             V(int idx);
 // log.c
 void            initlog(int, struct superblock*);
 void            log_write(struct buf*);
@@ -145,6 +146,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
+int             cow_alloc(pagetable_t pagetable, uint64 va);
 
 // uart.c
 void            uartinit(void);
@@ -154,6 +156,7 @@ void            uartputc_sync(int);
 int             uartgetc(void);
 
 // vm.c
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
 void            kvminit(void);
 void            kvminithart(void);
 uint64          kvmpa(uint64);
@@ -185,3 +188,4 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+#define PA2IDX(pa) (((uint64)pa - KERNBASE) / PGSIZE)

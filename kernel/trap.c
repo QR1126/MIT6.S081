@@ -65,7 +65,12 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if (r_scause() == 0xf) {
+    uint64 va = r_stval();
+    if (cow_alloc(p->pagetable, va) < 0)
+      p->killed = 1;
+  }
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -216,5 +221,25 @@ devintr()
   } else {
     return 0;
   }
+}
+
+int 
+cow_alloc(pagetable_t pagetable, uint64 va)
+{
+  if (va >= MAXVA) 
+    return -1;
+  pte_t *pte = walk(pagetable, va, 0);
+  if (pte == 0 || (*pte & PTE_U) == 0 || (*pte & PTE_V) == 0)
+    return -1;
+  if (*pte & PTE_W) 
+    return 0;
+  uint64 pa = PTE2PA(*pte);
+  void *mem = kalloc();
+  if (mem == 0) 
+    return -1;
+  *pte = PTE_FLAGS(*pte) | PTE_W | PA2PTE(mem);
+  memmove((char *) mem, (char *) pa, PGSIZE);
+  kfree((void *) pa);
+  return 0;
 }
 
